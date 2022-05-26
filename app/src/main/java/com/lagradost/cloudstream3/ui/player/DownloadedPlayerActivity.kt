@@ -50,7 +50,7 @@ class DownloadedPlayerActivity : AppCompatActivity() {
             return
         }
 
-        if (data.scheme == "content") {
+        if (data.scheme == "content" || data.scheme == "file") {
             val name = UniFile.fromUri(this, data).name
             this.navigate(
                 R.id.global_to_navigation_player, GeneratorPlayer.newInstance(

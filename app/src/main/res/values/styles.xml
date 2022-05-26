@@ -436,6 +436,14 @@
         <item name="rippleColor">?attr/primaryBlackBackground</item>
     </style>
 
+    <style name="RedButton" parent="NiceButton">
+        <item name="strokeColor">?attr/iconGrayBackground</item>
+        <item name="backgroundTint">#ff0000</item>
+        <item name="iconTint">?attr/iconGrayBackground</item>
+        <item name="android:textColor">?attr/iconGrayBackground</item>
+        <item name="rippleColor">?attr/primaryBlackBackground</item>
+    </style>
+
     <style name="BlackLabel" parent="@style/Widget.MaterialComponents.Tooltip">
         <item name="backgroundTint">?attr/iconGrayBackground</item>
         <item name="android:textColor">?attr/textColor</item>

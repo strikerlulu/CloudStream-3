@@ -61,9 +61,9 @@ class CS3IPlayer : IPlayer {
 
     private var currentWindow: Int = 0
     private var playbackPosition: Long = 0
-
     private val subtitleHelper = PlayerSubtitleHelper()
 
+    override fun getFile(): ExtractorUri? = currentDownloadedFile
     override fun getDuration(): Long? = exoPlayer?.duration
     override fun getPosition(): Long? = exoPlayer?.currentPosition
     override fun getIsPlaying(): Boolean = isPlaying

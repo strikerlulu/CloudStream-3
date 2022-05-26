@@ -17,6 +17,7 @@ https://github.com/LagradOst/CloudStream-3/releases
 + Bookmarks
 + Download and stream movies, tv-shows and anime
 + Chromecast
++ Syncplay
 
 ***Screenshots:***
 (All the images are blurred because of DMCA reasons, but are actually not blurred in the app)

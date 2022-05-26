@@ -112,4 +112,5 @@ interface IPlayer {
     fun onResume(context: Context)
 
     fun release()
+    fun getFile(): ExtractorUri?
 }

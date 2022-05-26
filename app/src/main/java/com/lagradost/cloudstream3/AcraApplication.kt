@@ -37,8 +37,8 @@ class CustomReportSender : ReportSender {
         thread { // to not run it on main thread
             runBlocking {
                 suspendSafeApiCall {
-                    val post = app.post(url, data = data)
-                    println("Report response: $post")
+//                    val post = app.post(url, data = data)
+//                    println("Report response: $post")
                 }
             }
         }

@@ -114,6 +114,10 @@ class SettingsFragment : Fragment() {
             navigate(R.id.action_navigation_settings_to_navigation_settings_nginx)
         }
 
+        settings_syncplay?.setOnClickListener {
+            navigate(R.id.action_navigation_settings_to_navigation_settings_syncplay)
+        }
+
         settings_updates?.setOnClickListener {
             navigate(R.id.action_navigation_settings_to_navigation_settings_updates)
         }

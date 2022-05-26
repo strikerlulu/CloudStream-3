@@ -36,8 +36,14 @@
     <string name="dns_key" translatable="false">dns_key</string>
     <string name="download_path_key" translatable="false">download_path_key</string>
     <string name="nginx_url_key" translatable="false">nginx_url_key</string>
+    <string name="syncplay_address_key" translatable="false">syncplay_address_key</string>
+    <string name="syncplay_port_key" translatable="false">syncplay_port_key</string>
+    <string name="syncplay_room_key" translatable="false">syncplay_room_key</string>
+    <string name="syncplay_username_key" translatable="false">syncplay_username_key</string>
+    <string name="syncplay_password_key" translatable="false">syncplay_password_key</string>
     <string name="nginx_credentials" translatable="false">nginx_credentials</string>
     <string name="nginx_info" translatable="false">nginx_info</string>
+    <string name="syncplay_info" translatable="false">syncplay_info</string>
     <string name="app_name_download_path" translatable="false">Cloudstream</string>
     <string name="app_layout_key" translatable="false">app_layout_key</string>
     <string name="primary_color_key" translatable="false">primary_color_key</string>
@@ -240,12 +246,15 @@
 
     <string name="search">Search</string>
     <string name="category_nginx">Nginx</string>
+    <string name="category_syncplay">Syncplay</string>
     <string name="category_credits">Credits and account</string>
     <string name="category_updates">Updates and backup</string>
     <string name="nginx_credentials_title">Nginx Credential</string>
     <string name="nginx_credentials_summary">You have to use the following format mycoolusername:mysecurepassword123</string>
     <string name="nginx_info_title">What is Nginx ?</string>
     <string name="nginx_info_summary">Nginx is a software that can be used to display files from a server that you own. Click to see a Nginx setup guide</string>
+    <string name="syncplay_info_title">What is Syncplay ?</string>
+    <string name="syncplay_info_summary">Pausing, unpausing and seeking are synchronized over the Internet, giving everyone playing the same file in the same virtual room a shared viewing experience. Use alongside VoIP software, e.g. Mumble or Skype.</string>
 
     <string name="settings_info">Info</string>
     <string name="advanced_search">Advanced Search</string>
@@ -387,6 +396,12 @@
     <string name="download_path_pref">Download path</string>
 
     <string name="nginx_url_pref">Nginx server url</string>
+
+    <string name="syncplay_address_pref" translatable="false">Syncplay Address</string>
+    <string name="syncplay_port_pref" translatable="false">Syncplay Port</string>
+    <string name="syncplay_room_pref" translatable="false">Syncplay Room</string>
+    <string name="syncplay_username_pref" translatable="false">Syncplay Username</string>
+    <string name="syncplay_password_pref" translatable="false">Syncplay password</string>
 
     <string name="display_subbed_dubbed_settings">Display Dubbed/Subbed Anime</string>
 

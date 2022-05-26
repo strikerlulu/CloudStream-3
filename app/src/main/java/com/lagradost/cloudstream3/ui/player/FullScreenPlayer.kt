@@ -3,27 +3,25 @@ package com.lagradost.cloudstream3.ui.player
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.content.res.Resources
+import android.database.Cursor
 import android.graphics.Color
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.text.Editable
 import android.util.DisplayMetrics
-import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.View
-import android.view.WindowManager
+import android.view.*
 import android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.animation.AnimationUtils
-import android.widget.EditText
-import android.widget.ImageView
-import android.widget.TextView
+import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.core.graphics.blue
 import androidx.core.graphics.green
@@ -31,15 +29,21 @@ import androidx.core.graphics.red
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import androidx.core.widget.doOnTextChanged
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.preference.PreferenceManager
+import com.google.android.material.button.MaterialButton
 import com.lagradost.cloudstream3.AcraApplication.Companion.getKey
 import com.lagradost.cloudstream3.AcraApplication.Companion.setKey
 import com.lagradost.cloudstream3.CommonActivity.keyEventListener
 import com.lagradost.cloudstream3.CommonActivity.playerEventListener
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream3.sycnplay.SyncPlayClient
+import com.lagradost.cloudstream3.sycnplay.SyncPlayClientInterface
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
+import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showNginxTextInputDialog
 import com.lagradost.cloudstream3.utils.UIHelper.colorFromAttribute
 import com.lagradost.cloudstream3.utils.UIHelper.dismissSafe
 import com.lagradost.cloudstream3.utils.UIHelper.getNavigationBarHeight
@@ -50,7 +54,9 @@ import com.lagradost.cloudstream3.utils.UIHelper.showSystemUI
 import com.lagradost.cloudstream3.utils.UIHelper.toPx
 import com.lagradost.cloudstream3.utils.Vector2
 import kotlinx.android.synthetic.main.player_custom_layout.*
+import java.util.*
 import kotlin.math.*
+
 
 const val MINIMUM_SEEK_TIME = 7000L         // when swipe seeking
 const val MINIMUM_VERTICAL_SWIPE = 2.0f     // in percentage
@@ -63,6 +69,7 @@ const val DOUBLE_TAB_PAUSE_PERCENTAGE = 0.15        // in both directions
 
 // All the UI Logic for the player
 open class FullScreenPlayer : AbstractPlayerFragment() {
+
     // state of player UI
     protected var isShowing = false
     protected var isLocked = false
@@ -90,6 +97,13 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             logError(e)
             0L
         }
+
+    private var userArrayAdapter: ArrayAdapter<String>? = null
+    private var syncPlayClient: SyncPlayClient? = null
+
+    //    private val syncPlayUsers: MutableLiveData<List<SyncPlayClientInterface.UserFileDetails>> = MutableLiveData<List<SyncPlayClientInterface.UserFileDetails>>()
+    private var syncPlayUsers: List<SyncPlayClientInterface.UserFileDetails> = emptyList()
+    private var syncPlayMsgs = hashMapOf<String, String>()
 
     //private var useSystemBrightness = false
     protected var useTrueSystemBrightness = true
@@ -255,8 +269,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
         try {
             setKey(PLAYBACK_SPEED_KEY, speed)
             player_speed_btt?.text =
-                getString(R.string.player_speed_text_format).format(speed)
-                    .replace(".0x", "x")
+                getString(R.string.player_speed_text_format).format(speed).replace(".0x", "x")
         } catch (e: Exception) {
             // the format string was wrong
             logError(e)
@@ -271,9 +284,8 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
     private fun showSubtitleOffsetDialog() {
         context?.let { ctx ->
-            val builder =
-                AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
-                    .setView(R.layout.subtitle_offset)
+            val builder = AlertDialog.Builder(ctx, R.style.AlertDialogCustom)
+                .setView(R.layout.subtitle_offset)
             val dialog = builder.create()
             dialog.show()
 
@@ -341,32 +353,16 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     }
 
     private fun showSpeedDialog() {
-        val speedsText =
-            listOf(
-                "0.5x",
-                "0.75x",
-                "0.85x",
-                "1x",
-                "1.15x",
-                "1.25x",
-                "1.4x",
-                "1.5x",
-                "1.75x",
-                "2x"
-            )
-        val speedsNumbers =
-            listOf(0.5f, 0.75f, 0.85f, 1f, 1.15f, 1.25f, 1.4f, 1.5f, 1.75f, 2f)
+        val speedsText = listOf(
+            "0.5x", "0.75x", "0.85x", "1x", "1.15x", "1.25x", "1.4x", "1.5x", "1.75x", "2x"
+        )
+        val speedsNumbers = listOf(0.5f, 0.75f, 0.85f, 1f, 1.15f, 1.25f, 1.4f, 1.5f, 1.75f, 2f)
         val speedIndex = speedsNumbers.indexOf(player.getPlaybackSpeed())
 
         activity?.let { act ->
-            act.showDialog(
-                speedsText,
-                speedIndex,
-                act.getString(R.string.player_speed),
-                false,
-                {
-                    activity?.hideSystemUI()
-                }) { index ->
+            act.showDialog(speedsText, speedIndex, act.getString(R.string.player_speed), false, {
+                activity?.hideSystemUI()
+            }) { index ->
                 activity?.hideSystemUI()
                 setPlayBackSpeed(speedsNumbers[index])
             }
@@ -408,6 +404,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             exo_rew_text?.startAnimation(goLeft)
             exo_rew_text?.text = getString(R.string.rew_text_format).format(fastForwardTime / 1000)
             player.seekTime(-fastForwardTime)
+//            syncPlayClient?.seeked()
         } catch (e: Exception) {
             logError(e)
         }
@@ -438,6 +435,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             exo_ffwd_text?.startAnimation(goRight)
             exo_ffwd_text?.text = getString(R.string.ffw_text_format).format(fastForwardTime / 1000)
             player.seekTime(fastForwardTime)
+//            syncPlayClient?.seeked()
         } catch (e: Exception) {
             logError(e)
         }
@@ -581,9 +579,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     private var currentRequestedBrightness: Float = 1.0f
 
     enum class TouchAction {
-        Brightness,
-        Volume,
-        Time,
+        Brightness, Volume, Time,
     }
 
     companion object {
@@ -611,9 +607,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     }
 
     private fun calculateNewTime(
-        startTime: Long?,
-        touchStart: Vector2?,
-        touchEnd: Vector2?
+        startTime: Long?, touchStart: Vector2?, touchEnd: Vector2?
     ): Long? {
         if (touchStart == null || touchEnd == null || startTime == null) return null
         val diffX = (touchEnd.x - touchStart.x) * HORIZONTAL_MULTIPLIER / screenWidth.toFloat()
@@ -630,8 +624,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
         return if (useTrueSystemBrightness) {
             try {
                 Settings.System.getInt(
-                    context?.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS
+                    context?.contentResolver, Settings.System.SCREEN_BRIGHTNESS
                 ) / 255f
             } catch (e: Exception) {
                 // because true system brightness requires
@@ -661,7 +654,8 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
                 Settings.System.putInt(
                     context?.contentResolver,
-                    Settings.System.SCREEN_BRIGHTNESS, (brightness * 255).toInt()
+                    Settings.System.SCREEN_BRIGHTNESS,
+                    (brightness * 255).toInt()
                 )
             } catch (e: Exception) {
                 useTrueSystemBrightness = false
@@ -698,10 +692,8 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                         currentRequestedBrightness = it
                     }
                     (activity?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)?.let { audioManager ->
-                        val currentVolume =
-                            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                        val maxVolume =
-                            audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
 
                         currentRequestedVolume = currentVolume.toFloat() / maxVolume.toFloat()
                     }
@@ -727,11 +719,9 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 if (isCurrentTouchValid // is valid
                     && currentTouchAction == null // no other action like swiping is taking place
                     && currentLastTouchAction == null // last action was none, this prevents mis input random seek
-                    && holdTime != null
-                    && holdTime < DOUBLE_TAB_MAXIMUM_HOLD_TIME // it is a click not a long hold
+                    && holdTime != null && holdTime < DOUBLE_TAB_MAXIMUM_HOLD_TIME // it is a click not a long hold
                 ) {
-                    if (!isLocked
-                        && (System.currentTimeMillis() - currentLastTouchEndTime) < DOUBLE_TAB_MINIMUM_TIME_BETWEEN // the time since the last action is short
+                    if (!isLocked && (System.currentTimeMillis() - currentLastTouchEndTime) < DOUBLE_TAB_MINIMUM_TIME_BETWEEN // the time since the last action is short
                     ) {
                         currentClickCount++
 
@@ -740,12 +730,10 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                             if (doubleTapPauseEnabled) { // you can pause if your tap is in the middle of the screen
                                 when {
                                     currentTouch.x < screenWidth / 2 - (DOUBLE_TAB_PAUSE_PERCENTAGE * screenWidth) -> {
-                                        if (doubleTapEnabled)
-                                            rewind()
+                                        if (doubleTapEnabled) rewind()
                                     }
                                     currentTouch.x > screenWidth / 2 + (DOUBLE_TAB_PAUSE_PERCENTAGE * screenWidth) -> {
-                                        if (doubleTapEnabled)
-                                            fastForward()
+                                        if (doubleTapEnabled) fastForward()
                                     }
                                     else -> {
                                         player.handleEvent(CSPlayerEvent.PlayPauseToggle)
@@ -837,9 +825,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                                     currentTouchStartPlayerTime?.div(1000L)?.times(1000L)
                                 if (startTime != null) {
                                     calculateNewTime(
-                                        startTime,
-                                        startTouch,
-                                        currentTouch
+                                        startTime, startTouch, currentTouch
                                     )?.let { newMs ->
                                         val skipMs = newMs - startTime
                                         player_time_text?.text =
@@ -853,15 +839,14 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                             TouchAction.Brightness -> {
                                 player_progressbar_right_holder?.isVisible = true
                                 val lastRequested = currentRequestedBrightness
-                                currentRequestedBrightness =
-                                    min(
-                                        1.0f,
-                                        max(currentRequestedBrightness + verticalAddition, 0.0f)
-                                    )
+                                currentRequestedBrightness = min(
+                                    1.0f, max(currentRequestedBrightness + verticalAddition, 0.0f)
+                                )
 
                                 // this is to not spam request it, just in case it fucks over someone
-                                if (lastRequested != currentRequestedBrightness)
-                                    setBrightness(currentRequestedBrightness)
+                                if (lastRequested != currentRequestedBrightness) setBrightness(
+                                    currentRequestedBrightness
+                                )
 
                                 // max is set high to make it smooth
                                 player_progressbar_right?.max = 100_000
@@ -870,8 +855,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
                                 player_progressbar_right_icon?.setImageResource(
                                     brightnessIcons[min( // clamp the value just in case
-                                        brightnessIcons.size - 1,
-                                        max(
+                                        brightnessIcons.size - 1, max(
                                             0,
                                             round(currentRequestedBrightness * (brightnessIcons.size - 1)).toInt()
                                         )
@@ -887,11 +871,9 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                                         audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
 
                                     // clamps volume and adds swipe
-                                    currentRequestedVolume =
-                                        min(
-                                            1.0f,
-                                            max(currentRequestedVolume + verticalAddition, 0.0f)
-                                        )
+                                    currentRequestedVolume = min(
+                                        1.0f, max(currentRequestedVolume + verticalAddition, 0.0f)
+                                    )
 
                                     // max is set high to make it smooth
                                     player_progressbar_left?.max = 100_000
@@ -900,8 +882,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
                                     player_progressbar_left_icon?.setImageResource(
                                         volumeIcons[min( // clamp the value just in case
-                                            volumeIcons.size - 1,
-                                            max(
+                                            volumeIcons.size - 1, max(
                                                 0,
                                                 round(currentRequestedVolume * (volumeIcons.size - 1)).toInt()
                                             )
@@ -916,9 +897,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                                             if (desiredVolume < currentVolume) AudioManager.ADJUST_LOWER else AudioManager.ADJUST_RAISE
 
                                         audioManager.adjustStreamVolume(
-                                            AudioManager.STREAM_MUSIC,
-                                            newVolumeAdjusted,
-                                            0
+                                            AudioManager.STREAM_MUSIC, newVolumeAdjusted, 0
                                         )
                                     }
                                 }
@@ -979,12 +958,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 when (keyCode) {
                     // don't allow dpad move when hidden
 
-                    KeyEvent.KEYCODE_DPAD_DOWN,
-                    KeyEvent.KEYCODE_DPAD_UP,
-                    KeyEvent.KEYCODE_DPAD_DOWN_LEFT,
-                    KeyEvent.KEYCODE_DPAD_DOWN_RIGHT,
-                    KeyEvent.KEYCODE_DPAD_UP_LEFT,
-                    KeyEvent.KEYCODE_DPAD_UP_RIGHT -> {
+                    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN_LEFT, KeyEvent.KEYCODE_DPAD_DOWN_RIGHT, KeyEvent.KEYCODE_DPAD_UP_LEFT, KeyEvent.KEYCODE_DPAD_UP_RIGHT -> {
                         if (!isShowing) {
                             return true
                         } else {
@@ -1076,8 +1050,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
         // handle tv controls directly based on player state
         keyEventListener = { eventNav ->
             val (event, hasNavigated) = eventNav
-            if (event != null)
-                handleKeyEvent(event, hasNavigated)
+            if (event != null) handleKeyEvent(event, hasNavigated)
             else false
         }
 
@@ -1094,35 +1067,25 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
 
                 swipeHorizontalEnabled =
                     settingsManager.getBoolean(ctx.getString(R.string.swipe_enabled_key), true)
-                swipeVerticalEnabled =
-                    settingsManager.getBoolean(
-                        ctx.getString(R.string.swipe_vertical_enabled_key),
-                        true
-                    )
-                playBackSpeedEnabled = settingsManager.getBoolean(
-                    ctx.getString(R.string.playback_speed_enabled_key),
-                    false
+                swipeVerticalEnabled = settingsManager.getBoolean(
+                    ctx.getString(R.string.swipe_vertical_enabled_key), true
                 )
-                playerResizeEnabled =
-                    settingsManager.getBoolean(
-                        ctx.getString(R.string.player_resize_enabled_key),
-                        true
-                    )
-                doubleTapEnabled =
-                    settingsManager.getBoolean(
-                        ctx.getString(R.string.double_tap_enabled_key),
-                        false
-                    )
+                playBackSpeedEnabled = settingsManager.getBoolean(
+                    ctx.getString(R.string.playback_speed_enabled_key), false
+                )
+                playerResizeEnabled = settingsManager.getBoolean(
+                    ctx.getString(R.string.player_resize_enabled_key), true
+                )
+                doubleTapEnabled = settingsManager.getBoolean(
+                    ctx.getString(R.string.double_tap_enabled_key), false
+                )
 
-                doubleTapPauseEnabled =
-                    settingsManager.getBoolean(
-                        ctx.getString(R.string.double_tap_pause_enabled_key),
-                        false
-                    )
+                doubleTapPauseEnabled = settingsManager.getBoolean(
+                    ctx.getString(R.string.double_tap_pause_enabled_key), false
+                )
 
                 currentPrefQuality = settingsManager.getInt(
-                    ctx.getString(R.string.quality_pref_key),
-                    currentPrefQuality
+                    ctx.getString(R.string.quality_pref_key), currentPrefQuality
                 )
                 // useSystemBrightness =
                 //    settingsManager.getBoolean(ctx.getString(R.string.use_system_brightness_key), false)
@@ -1138,6 +1101,16 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             autoHide()
             player.handleEvent(CSPlayerEvent.PlayPauseToggle)
         }
+
+        player_syncplay?.setOnClickListener {
+            showSyncPlayDialog()
+        }
+//        syncPlayUsers.observe(viewLifecycleOwner) { list ->
+//            userArrayAdapter?.clear()
+//            userArrayAdapter?.addAll(list.map { userFile ->
+//                "${userFile.username} ${userFile.filename}(${userFile.duration})"
+//            })
+//        }
 
         // init clicks
         player_resize_btt?.setOnClickListener {
@@ -1237,4 +1210,201 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             logError(e)
         }
     }
+
+    private fun showSyncPlayDialog() {
+        context?.let { ctx ->
+            val sourceBuilder = AlertDialog.Builder(ctx, R.style.AlertDialogCustomBlack)
+                .setView(R.layout.syncplay_user_and_chat)
+            val sourceDialog = sourceBuilder.create()
+//            selectSourceDialog = sourceDialog
+            sourceDialog.show()
+            val userList = sourceDialog.findViewById<ListView>(R.id.sort_providers)!!
+            val msgList = sourceDialog.findViewById<ListView>(R.id.sort_subtitles)!!
+            val chatButton = sourceDialog.findViewById<MaterialButton>(R.id.chat_btt)!!
+            val readyButton = sourceDialog.findViewById<MaterialButton>(R.id.ready_btt)!!
+            val leaveButton = sourceDialog.findViewById<MaterialButton>(R.id.leave_btt)!!
+            val cancelButton = sourceDialog.findViewById<MaterialButton>(R.id.cancel_btt)!!
+
+            userArrayAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
+            userList.adapter = userArrayAdapter
+            userArrayAdapter?.addAll(syncPlayUsers.map {
+                "${it.username} ${it.filename}(${it.duration})"
+            })
+
+            val msgArrayAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
+            msgArrayAdapter.addAll(syncPlayMsgs.map { (user, msg) ->
+                "$user: $msg"
+            })
+            msgList.adapter = msgArrayAdapter
+//            msgList.setOnItemClickListener { _, _, which, _ -> }
+            cancelButton.setOnClickListener {
+                sourceDialog.dismissSafe(activity)
+            }
+            leaveButton.setOnClickListener {
+                syncPlayClient?.disconnect()
+                sourceDialog.dismissSafe(activity)
+            }
+            chatButton.setOnClickListener {
+                activity?.showNginxTextInputDialog(
+                    "Type your message here",
+                    "",
+                    android.text.InputType.TYPE_CLASS_TEXT,
+                    {}) { msg ->
+                    syncPlayClient?.setMsg(msg)
+                }
+            }
+            readyButton.setOnClickListener {
+                context?.let { ctx ->
+                    val settingsManager = PreferenceManager.getDefaultSharedPreferences(ctx)
+                    settingsManager?.let { sm ->
+                        startSyncPlay(sm)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startSyncPlay(settingsManager: SharedPreferences) {
+//        val server = "syncplay.pl"
+        val server =
+            settingsManager.getString(getString(R.string.syncplay_address_key), "192.168.1.107")
+        val port = 8995//settingsManager.getInt(getString(R.string.syncplay_port_key), 8995)
+        val room = settingsManager.getString(getString(R.string.syncplay_room_key), "testing")
+        val username =
+            settingsManager.getString(getString(R.string.syncplay_username_key), "striker")
+        val password =
+            settingsManager.getString(getString(R.string.syncplay_password_key), "passwd")
+        val syncPlayClientInterface =
+            object : SyncPlayClientInterface {
+                override fun onConnected(motd: String) {
+                    activity?.runOnUiThread {
+                        Toast.makeText(context, "Connected", Toast.LENGTH_SHORT).show()
+                    }
+                    println(motd)
+                }
+
+                override fun onError(errMsg: String) {
+                    activity?.runOnUiThread {
+                        Toast.makeText(context, "Couldn't connect", Toast.LENGTH_SHORT)
+                            .show()
+                    }
+                    println(errMsg)
+                }
+
+                override fun onChat(msg: String, username: String) {
+                    syncPlayMsgs[username] = msg
+                    activity?.runOnUiThread {
+                        Toast.makeText(context, "$msg by $username", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                override fun onUser(
+                    username: String, event: Map<String, Boolean>, room: String
+                ) {
+                    println("Username $username event $event room $room")
+                    var extras = ""
+                    if (event.containsKey("joined")) {
+                        extras = "joined";
+                    }
+                    if (event.containsKey("left")) {
+                        extras = "left";
+                    }
+                    activity?.runOnUiThread {
+                        val msg = "User $username $extras"
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                override fun onUser(
+                    setBy: String, paused: Boolean, position: Long, doSeek: Boolean
+                ) {
+                    println("setBy:${setBy} pause:${paused}: position${position} doSeek $doSeek")
+                    activity?.runOnUiThread {
+                        if (doSeek) {
+                            player.seekTo(position * 1000)
+                        }
+                        if (paused) {
+                            player.handleEvent(CSPlayerEvent.Pause)
+                        } else {
+                            player.handleEvent(CSPlayerEvent.Play)
+                        }
+                        var msg = ""
+                        if (paused) {
+                            msg = "paused at $position";
+                        }
+                        if (doSeek) {
+                            msg = "seeks to $position";
+                        }
+                        if (paused || doSeek) {
+                            val mssg = "User $setBy $msg";
+//                                    Toast.makeText(context, mssg, Toast.LENGTH_SHORT).show()
+                            println(mssg)
+                        }
+                    }
+                }
+
+                override fun onUserList(details: Stack<SyncPlayClientInterface.UserFileDetails>) {
+//                    println(details)
+//                    syncPlayUsers.postValue(details)
+                    syncPlayUsers = details.toList()
+//                    syncPlayUsers.clear()
+//                    details.map {
+//                        syncPlayUsers.add(it)
+//                    }
+                }
+
+                override fun onFileUpdate(mUserFileDetails: SyncPlayClientInterface.UserFileDetails) {
+                    print(mUserFileDetails)
+                }
+
+                override fun debugMessage(msg: String) {
+//                    if (!msg.contains("ping"))
+//                        println("SyncPlayDebug $msg")
+                }
+            }
+        syncPlayClient = SyncPlayClient(
+            username, room, "$server:$port", password, syncPlayClientInterface
+        )
+//                val syncPlayClient = SyncPlayClient(
+//                    server,
+//                    port,
+//                    room,
+//                    username,
+//                    password,
+//                    syncPlayClientInterface
+//                )
+        syncPlayClient?.setPlayerState(object : SyncPlayClientInterface.PlayerDetails {
+            override val position: Long
+                get() = if (player.getPosition() != null) player.getPosition()!!
+                    .div(1000L) else 0
+
+            override val isPaused: Boolean
+                get() = !player.getIsPlaying()
+        })
+//                val filename = player_video_title_rez.text.toString().split(' ')[0]
+        val file = player.getFile()
+        if (file != null) {
+            val filename = file.name
+            var size = 0
+            val cursor: Cursor? = activity?.contentResolver?.query(
+                file.uri, null, null, null, null, null
+            )
+            if (cursor != null && cursor.moveToFirst()) {
+                size = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (!cursor.isNull(size)) {
+                    // Technically the column stores an int, but cursor.getString()
+                    // will do the conversion automatically.
+                    size = cursor.getInt(size)
+                }
+            }
+            syncPlayClient?.set_file(
+                player.getDuration()!! / 1000, size.toLong(),//24097715,
+                filename
+            )
+        }
+//                    syncPlayClient.start()
+        Thread(syncPlayClient).start()
+        syncPlayClient?.setReady(true)
+    }
+
 }

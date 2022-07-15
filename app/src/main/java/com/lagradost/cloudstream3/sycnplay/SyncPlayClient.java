@@ -1,14 +1,10 @@
 package com.lagradost.cloudstream3.sycnplay;
 
-//import org.json.JSONException;
-//import org.json.JSONObject;
-
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.lagradost.cloudstream3.utils.Coroutines;
 
 import org.json.JSONException;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -18,17 +14,16 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-
-//@SuppressWarnings("unchecked")
-public class SyncPlayClient implements Runnable {
+@SuppressWarnings("unchecked")
+public class SyncPlayClient {
     public static final String version = "1.6.9";
     private String username;
     private String room;
@@ -48,7 +43,7 @@ public class SyncPlayClient implements Runnable {
     private Double latencyCalculation;
 
     private Integer clientIgnoringOnTheFly = 0;
-    private Long serverIgnoringOnTheFly = 0L;
+    private Long serverIgnoringOnTheFly = 1L;
     private boolean stateChanged = false;
     private boolean seek = false;
 
@@ -83,24 +78,24 @@ public class SyncPlayClient implements Runnable {
         frameArray = new ArrayList<>();
     }
 
-    private JSONObject helloRequest() throws JSONException {
-        JSONObject payload = new JSONObject();
-        JSONObject hello = new JSONObject();
-        hello.put("username", this.username);
-        JSONObject room = new JSONObject();
-        room.put("name", this.room);
-        hello.put("room", room);
-        hello.put("version", version);
+    private JsonObject helloRequest() throws JSONException {
+        JsonObject payload = new JsonObject();
+        JsonObject hello = new JsonObject();
+        hello.addProperty("username", this.username);
+        JsonObject room = new JsonObject();
+        room.addProperty("name", this.room);
+        hello.add("room", room);
+        hello.addProperty("version", version);
         if (this.password != null) {
-            hello.put("password", this.password);
+            hello.addProperty("password", this.password);
         }
-        payload.put("Hello", hello);
+        payload.add("Hello", hello);
         return payload;
     }
 
-    private JSONObject listRequest() throws JSONException {
-        JSONObject payload = new JSONObject();
-        payload.put("List", null);
+    private JsonObject listRequest() throws JSONException {
+        JsonObject payload = new JsonObject();
+        payload.add("List", null);
         return payload;
     }
 
@@ -111,7 +106,7 @@ public class SyncPlayClient implements Runnable {
     }
 
     @SuppressWarnings("ConstantConditions")
-    @Override
+//    @Override
     public void run() {
         Socket socket = new Socket();
 //        SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
@@ -154,79 +149,79 @@ public class SyncPlayClient implements Runnable {
                     this.latency = System.currentTimeMillis() - this.pongTimeKeeper;
                     sPlayInterface.debugMessage("SERVER << " + response);
                     try {
-                        JSONParser jParse = new JSONParser();
-                        JSONObject jObj = (JSONObject) jParse.parse(response);
-                        if (!jObj.toJSONString().contains("ping"))
-                            System.out.println(jObj.toJSONString());
-                        if (jObj.containsKey("Error")) {
+                        JsonParser jParse = new JsonParser();
+                        JsonObject jObj = (JsonObject) jParse.parse(response);
+//                        if (!jObj.toString().contains("ping"))
+//                            System.out.println(jObj);
+                        if (jObj.has("Error")) {
                             //disconnect
                             this.isConnected = false;
                             sPlayInterface.onError(jObj.get("Error").toString());
                         }
-                        if (jObj.containsKey("Hello")) {
-                            JSONObject Hello = (JSONObject) jObj.get("Hello");
+                        if (jObj.has("Hello")) {
+                            JsonObject Hello = (JsonObject) jObj.get("Hello");
                             String motd = Hello.get("motd").toString();
                             sendFrame(roomEventRequest("joined").toString());
                             sPlayInterface.onConnected(motd);
                         }
-                        if (jObj.containsKey("Chat")) {
-                            JSONObject Hello = (JSONObject) jObj.get("Chat");
-                            String username = Hello.get("username").toString();
-                            String message = Hello.get("message").toString();
+                        if (jObj.has("Chat")) {
+                            JsonObject Hello = (JsonObject) jObj.get("Chat");
+                            String username = Hello.get("username").getAsString();
+                            String message = Hello.get("message").getAsString();
                             sPlayInterface.onChat(message, username);
                         }
-                        if (jObj.containsKey("Set")) {
-                            JSONObject set = (JSONObject) jObj.get("Set");
-                            if (set.containsKey("user")) {
-                                JSONObject user = (JSONObject) set.get("user");
+                        if (jObj.has("Set")) {
+                            JsonObject set = (JsonObject) jObj.get("Set");
+                            if (set.has("user")) {
+                                JsonObject user = (JsonObject) set.get("user");
                                 Set<String> uKeySet = user.keySet();
                                 for (String userName : uKeySet) {
-                                    JSONObject specificUser = (JSONObject) user.get(userName);
-                                    JSONObject room = (JSONObject) specificUser.get("room");
-                                    String roomName = (String) room.get("name");
+                                    JsonObject specificUser = (JsonObject) user.get(userName);
+                                    JsonObject room = (JsonObject) specificUser.get("room");
+                                    String roomName = room.get("name").getAsString();
 
-                                    if (specificUser.containsKey("event")) {
-                                        JSONObject event = (JSONObject) specificUser.get("event");
+                                    if (specificUser.has("event")) {
+                                        JsonObject event = (JsonObject) specificUser.get("event");
                                         String eventName = null;
-                                        if (event.containsKey("joined")) {
+                                        if (event.has("joined")) {
                                             eventName = "joined";
-                                        } else if (event.containsKey("left")) {
+                                        } else if (event.has("left")) {
                                             eventName = "left";
                                         }
-                                        Boolean eventFlag = (Boolean) event.get(eventName);
+                                        Boolean eventFlag = event.get(eventName).getAsBoolean();
                                         Map<String, Boolean> eventMap = new HashMap<>();
                                         eventMap.put(eventName, eventFlag);
                                         sPlayInterface.onUser(userName, eventMap, roomName);
                                     }
-                                    if (specificUser.containsKey("file")) {
-                                        JSONObject file = (JSONObject) specificUser.get("file");
+                                    if (specificUser.has("file")) {
+                                        JsonObject file = (JsonObject) specificUser.get("file");
                                         SyncPlayClientInterface.UserFileDetails mFileDetails;
                                         try {
                                             mFileDetails = new
                                                     SyncPlayClientInterface.UserFileDetails(
-                                                    new Double((double) file.get("duration")).longValue(),
-                                                    new Double((double) file.get("size")).longValue(),
-                                                    (String) file.get("name"), userName);
+                                                    new Double(file.get("duration").getAsDouble()).longValue(),
+                                                    new Double(file.get("size").getAsDouble()).longValue(),
+                                                    file.get("name").getAsString(), userName);
                                         } catch (ClassCastException e) {
                                             try {
                                                 mFileDetails = new
                                                         SyncPlayClientInterface.UserFileDetails(
-                                                        new Double((long) file.get("duration")).longValue(),
-                                                        new Double((long) file.get("size")).longValue(),
-                                                        (String) file.get("name"), userName);
+                                                        new Double(file.get("duration").getAsDouble()).longValue(),
+                                                        new Double(file.get("size").getAsDouble()).longValue(),
+                                                        file.get("name").getAsString(), userName);
                                             } catch (ClassCastException f) {
                                                 try {
                                                     mFileDetails = new
                                                             SyncPlayClientInterface.UserFileDetails(
-                                                            new Double((long) file.get("duration")).longValue(),
-                                                            new Double((double) file.get("size")).longValue(),
-                                                            (String) file.get("name"), userName);
+                                                            new Double(file.get("duration").getAsLong()).longValue(),
+                                                            new Double(file.get("size").getAsDouble()).longValue(),
+                                                            file.get("name").getAsString(), userName);
                                                 } catch (ClassCastException g) {
                                                     mFileDetails = new
                                                             SyncPlayClientInterface.UserFileDetails(
-                                                            new Double((double) file.get("duration")).longValue(),
-                                                            new Double((long) file.get("size")).longValue(),
-                                                            (String) file.get("name"), userName);
+                                                            new Double(file.get("duration").getAsDouble()).longValue(),
+                                                            new Double(file.get("size").getAsLong()).longValue(),
+                                                            file.get("name").getAsString(), userName);
                                                 }
                                             }
                                         }
@@ -235,100 +230,105 @@ public class SyncPlayClient implements Runnable {
                                 }
                             }
                         }
-                        if (jObj.containsKey("List")) {
+                        if (jObj.has("List")) {
                             Stack<SyncPlayClientInterface.UserFileDetails> details = new Stack<>();
-                            JSONObject listObj = (JSONObject) jObj.get("List");
+                            JsonObject listObj = (JsonObject) jObj.get("List");
                             Set<String> roomKeys = listObj.keySet();
                             for (String room : roomKeys) {
                                 if (room.equals(this.room)) {
-                                    JSONObject roomObj = (JSONObject) listObj.get(room);
+                                    JsonObject roomObj = (JsonObject) listObj.get(room);
                                     Set<String> userKeys = roomObj.keySet();
                                     for (String user : userKeys) {
                                         if (user.equals(this.username)) {
                                             continue;
                                         }
-                                        JSONObject userObj = (JSONObject) roomObj.get(user);
-                                        JSONObject file = (JSONObject) userObj.get("file");
-                                        if (file.containsKey("duration") && file.containsKey("size")
-                                                && file.containsKey("name")) {
+                                        JsonObject userObj = (JsonObject) roomObj.get(user);
+                                        JsonObject file = (JsonObject) userObj.get("file");
+                                        if (file.has("duration") && file.has("size")
+                                                && file.has("name")) {
                                             try {
                                                 details.push(new SyncPlayClientInterface.UserFileDetails(
-                                                        new Double((double) file.get("duration")).longValue(), (long) file.get("size"),
-                                                        (String) file.get("name"), user
+                                                        new Double(file.get("duration").getAsDouble()).longValue(), file.get("size").getAsLong(),
+                                                        file.get("name").getAsString(), user
                                                 ));
                                             } catch (ClassCastException e) {
                                                 try {
                                                     details.push(new SyncPlayClientInterface.UserFileDetails(
-                                                            (long) file.get("duration"), (long) file.get("size"),
-                                                            (String) file.get("name"), user
+                                                            file.get("duration").getAsLong(), file.get("size").getAsLong(),
+                                                            file.get("name").getAsString(), user
                                                     ));
                                                 } catch (ClassCastException f) {
                                                     try {
                                                         details.push(new SyncPlayClientInterface.UserFileDetails(
-                                                                new Double((double) file.get("duration")).longValue(),
-                                                                new Double((double) file.get("size")).longValue(),
-                                                                (String) file.get("name"), user
+                                                                new Double(file.get("duration").getAsDouble()).longValue(),
+                                                                new Double(file.get("size").getAsDouble()).longValue(),
+                                                                file.get("name").getAsString(), user
                                                         ));
                                                     } catch (ClassCastException g) {
                                                         details.push(new SyncPlayClientInterface.UserFileDetails(
-                                                                (long) file.get("duration"),
-                                                                new Double((double) file.get("size")).longValue(),
-                                                                (String) file.get("name"), user
+                                                                file.get("duration").getAsLong(),
+                                                                new Double(file.get("size").getAsDouble()).longValue(),
+                                                                file.get("name").getAsString(), user
                                                         ));
                                                     }
                                                 }
                                             }
                                         } else {
-                                            details.push(new SyncPlayClientInterface.UserFileDetails(0, 0, null, user));
+                                            details.push(new SyncPlayClientInterface.UserFileDetails(0, 0, "", user));
                                         }
                                     }
                                 }
                             }
                             sPlayInterface.onUserList(details);
                         }
-                        if (jObj.containsKey("State")) {
-                            JSONObject state = (JSONObject) jObj.get("State");
-                            JSONObject ping = (JSONObject) state.get("ping");
+                        if (jObj.has("State")) {
+                            JsonObject state = (JsonObject) jObj.get("State");
+                            JsonObject ping = (JsonObject) state.get("ping");
                             if (ping.get("yourLatency") != null) {
-                                this.clientRtt = (float) ping.get("yourLatency");
+                                this.clientRtt = ping.get("yourLatency").getAsFloat();
                             }
-                            this.latencyCalculation = (Double) ping.get("latencyCalculation");
-                            if (state.containsKey("ignoringOnTheFly")) {
-                                JSONObject ignore = (JSONObject) state.get("ignoringOnTheFly");
-                                if (ignore.containsKey("server")) {
-                                    this.serverIgnoringOnTheFly = (Long) ignore.get("server");
+                            this.latencyCalculation = ping.get("latencyCalculation").getAsDouble();
+                            if (state.has("ignoringOnTheFly")) {
+                                JsonObject ignore = (JsonObject) state.get("ignoringOnTheFly");
+                                if (ignore.has("server")) {
+                                    this.serverIgnoringOnTheFly = ignore.get("server").getAsLong();
                                     this.clientIgnoringOnTheFly = 0;
                                     this.stateChanged = false;
                                 }
                             }
-                            if (state.containsKey("playstate")) {
-                                JSONObject playstate = (JSONObject) state.get("playstate");
-                                if (playstate.containsKey("setBy")) {
-                                    String setBy = (String) playstate.get("setBy");
-                                    if ((setBy != null) && (!setBy.equals(this.username))) {
-                                        Boolean paused = (Boolean) playstate.get("paused");
-                                        Boolean doSeek = (Boolean) playstate.get("doSeek");
-                                        if (doSeek == null) {
-                                            doSeek = false;
-                                        }
-                                        long position;
-                                        try {
-                                            position = new Double((double) playstate.get("position")).longValue();
-                                        } catch (ClassCastException e) {
+                            if (state.has("playstate")) {
+                                JsonObject playstate = (JsonObject) state.get("playstate");
+                                if (playstate.has("setBy")) {
+                                    try {
+                                        String setBy = playstate.get("setBy").getAsString();
+                                        if ((!setBy.equals(this.username))) {
+                                            Boolean paused = playstate.get("paused").getAsBoolean();
+                                            Boolean doSeek;
                                             try {
-                                                position = (long) playstate.get("position");
-                                            } catch (ClassCastException f) {
-                                                position = new Double((double) playstate.get("position")).longValue();
+                                                doSeek = playstate.get("doSeek").getAsBoolean();
+                                            } catch (UnsupportedOperationException e) {
+                                                doSeek = false;
                                             }
+                                            long position;
+                                            try {
+                                                position = new Double(playstate.get("position").getAsDouble()).longValue();
+                                            } catch (ClassCastException e) {
+                                                try {
+                                                    position = playstate.get("position").getAsLong();
+                                                } catch (ClassCastException f) {
+                                                    position = new Double(playstate.get("position").getAsDouble()).longValue();
+                                                }
+                                            }
+                                            sPlayInterface.onUser(setBy, paused, position, doSeek);
                                         }
-                                        sPlayInterface.onUser(setBy, paused, position, doSeek);
+                                    } catch (UnsupportedOperationException ignored) {
                                     }
                                 }
                             }
                             sendFrame(prepareState().toString());
                             this.pongTimeKeeper = System.currentTimeMillis();
                         }
-                    } catch (ParseException e) {
+                    } catch (ConcurrentModificationException e) {
                         e.printStackTrace();
                     }
                     response = bufferedreader.readLine();
@@ -345,11 +345,10 @@ public class SyncPlayClient implements Runnable {
                         sendFrame(prepareMessage().toString());
                     }
                 }
-            } catch (IOException | JSONException e) {
+            } catch (IOException | JSONException | UnsupportedOperationException e) {
                 e.printStackTrace();
                 sPlayInterface.onError(e.toString());
             }
-
             try {
                 socket.close();
             } catch (IOException e) {
@@ -363,66 +362,82 @@ public class SyncPlayClient implements Runnable {
         this.isConnected = false;
     }
 
-    private JSONObject prepareState() {
-        JSONObject payload = new JSONObject();
-        JSONObject state = new JSONObject();
-        Boolean clientIgnoreIsNotSet = (clientIgnoringOnTheFly == 0 || serverIgnoringOnTheFly != 0);
+    public boolean isConnected() {
+        return this.isConnected;
+    }
+
+    public boolean isReady() {
+        return this.isReady;
+    }
+
+    private JsonObject prepareState() {
+        JsonObject payload = new JsonObject();
+        JsonObject state = new JsonObject();
+        boolean clientIgnoreIsNotSet = (clientIgnoringOnTheFly == 0 || serverIgnoringOnTheFly != 0);
+        System.out.println("The fking boolean is " + clientIgnoreIsNotSet);
+//        clientIgnoreIsNotSet = true;
         if (clientIgnoreIsNotSet) {
-            state.put("playstate", new JSONObject());
-            JSONObject playstate = (JSONObject) state.get("playstate");
+            state.add("playstate", new JsonObject());
+            JsonObject playstate = (JsonObject) state.get("playstate");
             if (mPlayerDetails != null) {
-                Coroutines.INSTANCE.runOnMainThread(() -> {
-                    playstate.put("position", mPlayerDetails.getPosition());
-                    playstate.put("paused", mPlayerDetails.isPaused());
+                Coroutines.INSTANCE.main(continuation -> {
+                    playstate.addProperty("position", mPlayerDetails.getPosition());
+                    playstate.addProperty("paused", mPlayerDetails.isPaused());
                     return null;
                 });
+//                Coroutines.INSTANCE.runOnMainThread(() -> {
+//                    playstate.addProperty("position", mPlayerDetails.getPosition());
+//                    playstate.addProperty("paused", mPlayerDetails.isPaused());
+//                    return null;
+//                });
             } else {
-                playstate.put("position", 0.0);
-                playstate.put("paused", true);
+                playstate.addProperty("position", 0.0);
+                playstate.addProperty("paused", true);
             }
             if (seek) {
-                playstate.put("doSeek", true);
+                playstate.addProperty("doSeek", true);
                 this.seek = false;
             }
         }
-        state.put("ping", new JSONObject());
-        JSONObject ping = (JSONObject) state.get("ping");
-        ping.put("latencyCalculation", latencyCalculation);
-        ping.put("clientLatencyCalculation", System.currentTimeMillis() / 1000);
-        ping.put("clientRtt", this.clientRtt);
+        state.add("ping", new JsonObject());
+        JsonObject ping = (JsonObject) state.get("ping");
+        ping.addProperty("latencyCalculation", latencyCalculation);
+        ping.addProperty("clientLatencyCalculation", System.currentTimeMillis() / 1000);
+        ping.addProperty("clientRtt", this.clientRtt);
         if (this.stateChanged) {
             this.clientIgnoringOnTheFly += 1;
         }
         if (this.serverIgnoringOnTheFly > 0 || this.clientIgnoringOnTheFly > 0) {
-            state.put("ignoringOnTheFly", new JSONObject());
-            JSONObject ignoringOnTheFly = (JSONObject) state.get("ignoringOnTheFly");
+            state.add("ignoringOnTheFly", new JsonObject());
+            JsonObject ignoringOnTheFly = (JsonObject) state.get("ignoringOnTheFly");
             if (this.serverIgnoringOnTheFly > 0) {
-                ignoringOnTheFly.put("server", this.serverIgnoringOnTheFly);
+                ignoringOnTheFly.addProperty("server", this.serverIgnoringOnTheFly);
                 this.serverIgnoringOnTheFly = 0L;
             }
             if (this.clientIgnoringOnTheFly > 0) {
-                ignoringOnTheFly.put("client", this.clientIgnoringOnTheFly);
+                ignoringOnTheFly.addProperty("client", this.clientIgnoringOnTheFly);
             }
         }
-        payload.put("State", state);
+        payload.add("State", state);
+//        System.out.println("My playstate:" + payload);
         return payload;
     }
 
-    private JSONObject roomEventRequest(String event) {
-        JSONObject payload = new JSONObject();
+    private JsonObject roomEventRequest(String event) {
+        JsonObject payload = new JsonObject();
         if (event.toLowerCase().contentEquals("joined")) {
-            JSONObject set = new JSONObject();
-            JSONObject user = new JSONObject();
-            JSONObject userVal = new JSONObject();
-            JSONObject roomObj = new JSONObject();
-            JSONObject evt = new JSONObject();
-            evt.put(event, true);
-            roomObj.put("name", this.room);
-            roomObj.put("event", evt);
-            userVal.put("room", roomObj);
-            user.put(this.username, userVal);
-            set.put("user", user);
-            payload.put("Set", set);
+            JsonObject set = new JsonObject();
+            JsonObject user = new JsonObject();
+            JsonObject userVal = new JsonObject();
+            JsonObject roomObj = new JsonObject();
+            JsonObject evt = new JsonObject();
+            evt.addProperty(event, true);
+            roomObj.addProperty("name", this.room);
+            roomObj.add("event", evt);
+            userVal.add("room", roomObj);
+            user.add(this.username, userVal);
+            set.add("user", user);
+            payload.add("Set", set);
         }
         return payload;
     }
@@ -439,15 +454,15 @@ public class SyncPlayClient implements Runnable {
         frameArray.add(prepareReady(true).toString());
     }
 
-    private JSONObject prepareReady(boolean manuallyInitiated) {
-        JSONObject payload = new JSONObject();
-        JSONObject set = new JSONObject();
-        JSONObject ready = new JSONObject();
-        ready.put("isReady", this.isReady);
-        ready.put("username", this.username);
-        ready.put("manuallyInitiated", manuallyInitiated);
-        set.put("ready", ready);
-        payload.put("Set", set);
+    private JsonObject prepareReady(boolean manuallyInitiated) {
+        JsonObject payload = new JsonObject();
+        JsonObject set = new JsonObject();
+        JsonObject ready = new JsonObject();
+        ready.addProperty("isReady", this.isReady);
+        ready.addProperty("username", this.username);
+        ready.addProperty("manuallyInitiated", manuallyInitiated);
+        set.add("ready", ready);
+        payload.add("Set", set);
         return payload;
     }
 
@@ -460,21 +475,21 @@ public class SyncPlayClient implements Runnable {
         this.sendMsg = true;
     }
 
-    private JSONObject prepareFile() {
-        JSONObject payload = new JSONObject();
-        JSONObject set = new JSONObject();
-        JSONObject file = new JSONObject();
-        file.put("duration", this.duration);
-        file.put("name", this.filename);
-        file.put("size", this.size);
-        set.put("file", file);
-        payload.put("Set", set);
+    private JsonObject prepareFile() {
+        JsonObject payload = new JsonObject();
+        JsonObject set = new JsonObject();
+        JsonObject file = new JsonObject();
+        file.addProperty("duration", this.duration);
+        file.addProperty("name", this.filename);
+        file.addProperty("size", this.size);
+        set.add("file", file);
+        payload.add("Set", set);
         return payload;
     }
 
-    private JSONObject prepareMessage() {
-        JSONObject payload = new JSONObject();
-        payload.put("Chat", this.message);
+    private JsonObject prepareMessage() {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("Chat", this.message);
         return payload;
     }
 

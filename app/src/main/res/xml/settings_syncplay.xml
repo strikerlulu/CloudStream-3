@@ -4,12 +4,16 @@
     <PreferenceCategory app:icon="@color/transparent" />
 
     <EditTextPreference
+        android:defaultValue="syncplay.pl"
         android:icon="@drawable/ic_baseline_play_arrow_24"
         android:key="@string/syncplay_address_key"
         android:title="@string/syncplay_address_pref"
         app:useSimpleSummaryProvider="true" />
     <EditTextPreference
+        android:defaultValue="8995"
+        android:digits="0123456789"
         android:icon="@drawable/ic_baseline_electrical_services_24"
+        android:inputType="numberDecimal"
         android:key="@string/syncplay_port_key"
         android:title="@string/syncplay_port_pref"
         app:useSimpleSummaryProvider="true" />
@@ -34,6 +38,6 @@
         android:title="@string/syncplay_info_title">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="https://www.sarlays.com/use-nginx-with-cloudstream/" />
+            android:data="https://syncplay.pl" />
     </Preference>
 </PreferenceScreen>

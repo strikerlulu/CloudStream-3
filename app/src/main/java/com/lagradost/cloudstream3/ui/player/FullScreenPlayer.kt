@@ -29,7 +29,6 @@ import androidx.core.graphics.red
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import androidx.core.widget.doOnTextChanged
-import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.preference.PreferenceManager
 import com.google.android.material.button.MaterialButton
@@ -39,9 +38,13 @@ import com.lagradost.cloudstream3.CommonActivity.keyEventListener
 import com.lagradost.cloudstream3.CommonActivity.playerEventListener
 import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream3.mvvm.safeApiCall
+import com.lagradost.cloudstream3.sycnplay.SyncChat
 import com.lagradost.cloudstream3.sycnplay.SyncPlayClient
 import com.lagradost.cloudstream3.sycnplay.SyncPlayClientInterface
+import com.lagradost.cloudstream3.utils.Coroutines
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showChatInputDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showDialog
 import com.lagradost.cloudstream3.utils.SingleSelectionHelper.showNginxTextInputDialog
 import com.lagradost.cloudstream3.utils.UIHelper.colorFromAttribute
@@ -54,6 +57,9 @@ import com.lagradost.cloudstream3.utils.UIHelper.showSystemUI
 import com.lagradost.cloudstream3.utils.UIHelper.toPx
 import com.lagradost.cloudstream3.utils.Vector2
 import kotlinx.android.synthetic.main.player_custom_layout.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.*
 import kotlin.math.*
 
@@ -99,11 +105,15 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
         }
 
     private var userArrayAdapter: ArrayAdapter<String>? = null
+    private var msgArrayAdapter: ArrayAdapter<String>? = null
     private var syncPlayClient: SyncPlayClient? = null
 
-    //    private val syncPlayUsers: MutableLiveData<List<SyncPlayClientInterface.UserFileDetails>> = MutableLiveData<List<SyncPlayClientInterface.UserFileDetails>>()
-    private var syncPlayUsers: List<SyncPlayClientInterface.UserFileDetails> = emptyList()
-    private var syncPlayMsgs = hashMapOf<String, String>()
+    private val syncPlayUsers: MutableLiveData<List<SyncPlayClientInterface.UserFileDetails>> =
+        MutableLiveData<List<SyncPlayClientInterface.UserFileDetails>>()
+
+    //   private var syncPlayUsers: List<SyncPlayClientInterface.UserFileDetails> = emptyList()
+    private val syncPlayMsgs: MutableLiveData<List<SyncChat>> = MutableLiveData(emptyList())
+//    private var syncPlayMsgs = hashMapOf<String, String>()
 
     //private var useSystemBrightness = false
     protected var useTrueSystemBrightness = true
@@ -404,7 +414,9 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             exo_rew_text?.startAnimation(goLeft)
             exo_rew_text?.text = getString(R.string.rew_text_format).format(fastForwardTime / 1000)
             player.seekTime(-fastForwardTime)
-//            syncPlayClient?.seeked()
+            Coroutines.ioSafe {
+                syncPlayClient?.seeked()
+            }
         } catch (e: Exception) {
             logError(e)
         }
@@ -434,8 +446,10 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             })
             exo_ffwd_text?.startAnimation(goRight)
             exo_ffwd_text?.text = getString(R.string.ffw_text_format).format(fastForwardTime / 1000)
+            CoroutineScope(Dispatchers.IO).launch {
+                syncPlayClient?.seeked()
+            }
             player.seekTime(fastForwardTime)
-//            syncPlayClient?.seeked()
         } catch (e: Exception) {
             logError(e)
         }
@@ -708,6 +722,9 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                             calculateNewTime(startTime, startTouch, currentTouch)?.let { seekTo ->
                                 if (abs(seekTo - startTime) > MINIMUM_SEEK_TIME) {
                                     player.seekTo(seekTo)
+                                    Coroutines.ioSafe {
+                                        syncPlayClient?.seeked()
+                                    }
                                 }
                             }
                         }
@@ -936,18 +953,30 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                             KeyEvent.KEYCODE_DPAD_LEFT -> {
                                 if (!isShowing && !isLocked) {
                                     player.seekTime(-10000L)
+                                    Coroutines.ioSafe {
+                                        syncPlayClient?.seeked()
+                                    }
                                     return true
                                 } else if (player_pause_play?.isFocused == true) {
                                     player.seekTime(-30000L)
+                                    Coroutines.ioSafe {
+                                        syncPlayClient?.seeked()
+                                    }
                                     return true
                                 }
                             }
                             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                                 if (!isShowing && !isLocked) {
                                     player.seekTime(10000L)
+                                    Coroutines.ioSafe {
+                                        syncPlayClient?.seeked()
+                                    }
                                     return true
                                 } else if (player_pause_play?.isFocused == true) {
                                     player.seekTime(30000L)
+                                    Coroutines.ioSafe {
+                                        syncPlayClient?.seeked()
+                                    }
                                     return true
                                 }
                             }
@@ -1028,12 +1057,18 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 }
                 PlayerEventType.SeekForward -> {
                     player.handleEvent(CSPlayerEvent.SeekForward)
+                    Coroutines.ioSafe {
+                        syncPlayClient?.seeked()
+                    }
                 }
                 PlayerEventType.ShowSpeed -> {
                     showSpeedDialog()
                 }
                 PlayerEventType.SeekBack -> {
                     player.handleEvent(CSPlayerEvent.SeekBack)
+                    Coroutines.ioSafe {
+                        syncPlayClient?.seeked()
+                    }
                 }
                 PlayerEventType.ToggleMute -> {
                     player.handleEvent(CSPlayerEvent.ToggleMute)
@@ -1103,14 +1138,34 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
         }
 
         player_syncplay?.setOnClickListener {
-            showSyncPlayDialog()
+            context?.let { ctx ->
+                val settingsManager = PreferenceManager.getDefaultSharedPreferences(ctx)
+                val room = settingsManager.getString(getString(R.string.syncplay_room_key), "")
+                val username =
+                    settingsManager.getString(getString(R.string.syncplay_username_key), "")
+                if (room.isNullOrEmpty() || username.isNullOrEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Please set room and password from settings before using syncplay",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    showSyncPlayDialog()
+                }
+            }
         }
-//        syncPlayUsers.observe(viewLifecycleOwner) { list ->
-//            userArrayAdapter?.clear()
-//            userArrayAdapter?.addAll(list.map { userFile ->
-//                "${userFile.username} ${userFile.filename}(${userFile.duration})"
-//            })
-//        }
+        syncPlayUsers.observe(viewLifecycleOwner) { users ->
+            userArrayAdapter?.clear()
+            userArrayAdapter?.addAll(users.map { user ->
+                "${user.username} ${user.filename}(${user.duration})"
+            })
+        }
+        syncPlayMsgs.observe(viewLifecycleOwner) { messages ->
+            msgArrayAdapter?.clear()
+            msgArrayAdapter?.addAll(messages.map { msg ->
+                "${msg.username}: ${msg.message}"
+            })
+        }
 
         // init clicks
         player_resize_btt?.setOnClickListener {
@@ -1216,7 +1271,6 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             val sourceBuilder = AlertDialog.Builder(ctx, R.style.AlertDialogCustomBlack)
                 .setView(R.layout.syncplay_user_and_chat)
             val sourceDialog = sourceBuilder.create()
-//            selectSourceDialog = sourceDialog
             sourceDialog.show()
             val userList = sourceDialog.findViewById<ListView>(R.id.sort_providers)!!
             val msgList = sourceDialog.findViewById<ListView>(R.id.sort_subtitles)!!
@@ -1224,40 +1278,53 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             val readyButton = sourceDialog.findViewById<MaterialButton>(R.id.ready_btt)!!
             val leaveButton = sourceDialog.findViewById<MaterialButton>(R.id.leave_btt)!!
             val cancelButton = sourceDialog.findViewById<MaterialButton>(R.id.cancel_btt)!!
-
-            userArrayAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
+            if (syncPlayClient?.isConnected == true) {
+                readyButton.text = "Not ready"
+            }
+            if (userArrayAdapter == null)
+                userArrayAdapter = ArrayAdapter<String>(ctx, R.layout.item_user_and_msg)
             userList.adapter = userArrayAdapter
-            userArrayAdapter?.addAll(syncPlayUsers.map {
-                "${it.username} ${it.filename}(${it.duration})"
-            })
-
-            val msgArrayAdapter = ArrayAdapter<String>(ctx, R.layout.sort_bottom_single_choice)
-            msgArrayAdapter.addAll(syncPlayMsgs.map { (user, msg) ->
-                "$user: $msg"
-            })
+            if (msgArrayAdapter == null)
+                msgArrayAdapter = ArrayAdapter<String>(ctx, R.layout.item_user_and_msg)
             msgList.adapter = msgArrayAdapter
-//            msgList.setOnItemClickListener { _, _, which, _ -> }
+            msgArrayAdapter?.let {
+                msgList.setSelection(it.count - 1)
+            }
             cancelButton.setOnClickListener {
                 sourceDialog.dismissSafe(activity)
             }
             leaveButton.setOnClickListener {
                 syncPlayClient?.disconnect()
+                syncPlayClient = null
+                msgArrayAdapter?.clear()
+                userArrayAdapter?.clear()
                 sourceDialog.dismissSafe(activity)
             }
             chatButton.setOnClickListener {
-                activity?.showNginxTextInputDialog(
-                    "Type your message here",
-                    "",
-                    android.text.InputType.TYPE_CLASS_TEXT,
-                    {}) { msg ->
-                    syncPlayClient?.setMsg(msg)
+                if (syncPlayClient?.isConnected == true) {
+                    activity?.showChatInputDialog({}) { msg ->
+                        syncPlayClient?.setMsg(msg)
+                    }
+                } else {
+                    Toast.makeText(context, "Please connect first", Toast.LENGTH_SHORT).show()
                 }
             }
             readyButton.setOnClickListener {
-                context?.let { ctx ->
-                    val settingsManager = PreferenceManager.getDefaultSharedPreferences(ctx)
-                    settingsManager?.let { sm ->
-                        startSyncPlay(sm)
+                if (syncPlayClient?.isReady == true) {
+                    syncPlayClient?.isReady = false
+                    readyButton.text = "Ready"
+                } else {
+                    if (syncPlayClient == null) {
+                        context?.let { ctx ->
+                            val settingsManager = PreferenceManager.getDefaultSharedPreferences(ctx)
+                            settingsManager?.let { sm ->
+                                startSyncPlay(sm)
+                                readyButton.text = "Not ready"
+                            }
+                        }
+                    } else {
+                        syncPlayClient?.isReady = true
+                        readyButton.text = "Not ready"
                     }
                 }
             }
@@ -1265,36 +1332,37 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
     }
 
     private fun startSyncPlay(settingsManager: SharedPreferences) {
-//        val server = "syncplay.pl"
         val server =
-            settingsManager.getString(getString(R.string.syncplay_address_key), "192.168.1.107")
-        val port = 8995//settingsManager.getInt(getString(R.string.syncplay_port_key), 8995)
-        val room = settingsManager.getString(getString(R.string.syncplay_room_key), "testing")
-        val username =
-            settingsManager.getString(getString(R.string.syncplay_username_key), "striker")
-        val password =
-            settingsManager.getString(getString(R.string.syncplay_password_key), "passwd")
+            settingsManager.getString(getString(R.string.syncplay_address_key), "syncplay.pl")
+        val port = settingsManager.getString(getString(R.string.syncplay_port_key), "8995")?.toInt()
+        val room = settingsManager.getString(getString(R.string.syncplay_room_key), "")
+        val username = settingsManager.getString(getString(R.string.syncplay_username_key), "")
+        val password = settingsManager.getString(getString(R.string.syncplay_password_key), "")
         val syncPlayClientInterface =
             object : SyncPlayClientInterface {
                 override fun onConnected(motd: String) {
-                    activity?.runOnUiThread {
+                    println(motd)
+                    Coroutines.runOnMainThread {
                         Toast.makeText(context, "Connected", Toast.LENGTH_SHORT).show()
                     }
-                    println(motd)
                 }
 
                 override fun onError(errMsg: String) {
-                    activity?.runOnUiThread {
-                        Toast.makeText(context, "Couldn't connect", Toast.LENGTH_SHORT)
-                            .show()
-                    }
                     println(errMsg)
+                    Coroutines.main {
+                        Toast.makeText(context, "Couldn't connect", Toast.LENGTH_SHORT).show()
+                    }
                 }
 
-                override fun onChat(msg: String, username: String) {
-                    syncPlayMsgs[username] = msg
+                override fun onChat(msg: String, userName: String) {
+                    syncPlayMsgs.postValue(
+                        syncPlayMsgs.value?.plus(SyncChat(userName, msg))
+                            ?: listOf(SyncChat(userName, msg))
+                    )
                     activity?.runOnUiThread {
-                        Toast.makeText(context, "$msg by $username", Toast.LENGTH_SHORT).show()
+                        if ((userName != "") && (userName != username)) {
+                            Toast.makeText(context, "$username: $msg", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
 
@@ -1302,6 +1370,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                     username: String, event: Map<String, Boolean>, room: String
                 ) {
                     println("Username $username event $event room $room")
+                    syncPlayClient?.requestList()
                     var extras = ""
                     if (event.containsKey("joined")) {
                         extras = "joined";
@@ -1318,7 +1387,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 override fun onUser(
                     setBy: String, paused: Boolean, position: Long, doSeek: Boolean
                 ) {
-                    println("setBy:${setBy} pause:${paused}: position${position} doSeek $doSeek")
+                    println("setBy:${setBy} pause:${paused}: position:${position} doSeek:$doSeek")
                     activity?.runOnUiThread {
                         if (doSeek) {
                             player.seekTo(position * 1000)
@@ -1344,13 +1413,8 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 }
 
                 override fun onUserList(details: Stack<SyncPlayClientInterface.UserFileDetails>) {
-//                    println(details)
-//                    syncPlayUsers.postValue(details)
-                    syncPlayUsers = details.toList()
-//                    syncPlayUsers.clear()
-//                    details.map {
-//                        syncPlayUsers.add(it)
-//                    }
+                    println("OnUserList: $details")
+                    syncPlayUsers.postValue(details)
                 }
 
                 override fun onFileUpdate(mUserFileDetails: SyncPlayClientInterface.UserFileDetails) {
@@ -1358,21 +1422,12 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 }
 
                 override fun debugMessage(msg: String) {
-//                    if (!msg.contains("ping"))
-//                        println("SyncPlayDebug $msg")
+                    println("SyncPlayDebug: $msg")
                 }
             }
         syncPlayClient = SyncPlayClient(
             username, room, "$server:$port", password, syncPlayClientInterface
         )
-//                val syncPlayClient = SyncPlayClient(
-//                    server,
-//                    port,
-//                    room,
-//                    username,
-//                    password,
-//                    syncPlayClientInterface
-//                )
         syncPlayClient?.setPlayerState(object : SyncPlayClientInterface.PlayerDetails {
             override val position: Long
                 get() = if (player.getPosition() != null) player.getPosition()!!
@@ -1381,7 +1436,7 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
             override val isPaused: Boolean
                 get() = !player.getIsPlaying()
         })
-//                val filename = player_video_title_rez.text.toString().split(' ')[0]
+        //val filename = player_video_title_rez.text.toString().split(' ')[0]
         val file = player.getFile()
         if (file != null) {
             val filename = file.name
@@ -1401,9 +1456,17 @@ open class FullScreenPlayer : AbstractPlayerFragment() {
                 player.getDuration()!! / 1000, size.toLong(),//24097715,
                 filename
             )
+        } else {
+            syncPlayClient?.set_file(
+                player.getDuration()!! / 1000, 0,
+                player.getLink()?.name
+            )
         }
 //                    syncPlayClient.start()
-        Thread(syncPlayClient).start()
+//        Thread(syncPlayClient).start()
+        Coroutines.ioSafe {
+            syncPlayClient?.run()
+        }
         syncPlayClient?.setReady(true)
     }
 

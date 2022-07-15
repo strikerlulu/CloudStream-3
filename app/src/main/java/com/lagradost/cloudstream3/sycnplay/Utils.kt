@@ -21,3 +21,5 @@ object Utils {
         return ""
     }
 }
+
+data class SyncChat(val username:String,val message:String)

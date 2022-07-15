@@ -272,4 +272,21 @@ object SingleSelectionHelper {
             dismissCallback
         )
     }
+
+    fun Activity.showChatInputDialog(
+        dismissCallback: () -> Unit,
+        callback: (String) -> Unit,
+    ) {
+        val builder = BottomSheetDialog(this)  // probably the stuff at the bottom
+        builder.setContentView(R.layout.bottom_chat_input_dialog)  // input layout
+        builder.show()
+        showInputDialog(
+            builder,
+            "",
+            "Enter your title here",
+            null,
+            callback,
+            dismissCallback
+        )
+    }
 }

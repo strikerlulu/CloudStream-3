@@ -28,16 +28,16 @@ class CustomReportSender : ReportSender {
     // Sends all your crashes to google forms
     override fun send(context: Context, errorContent: CrashReportData) {
         println("Sending report")
-        val url =
-            "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeFmyBChi6HF3IkhTVWPiDXJtxt8W0Hf4Agljm_0-0_QuEYFg/formResponse"
+        //val url = "https://docs.google.com/forms/u/0/d/e/1FAIpQLSeFmyBChi6HF3IkhTVWPiDXJtxt8W0Hf4Agljm_0-0_QuEYFg/formResponse"
+//        val url = "https://acra.strikerlulu.me/report"
         val data = mapOf(
-            "entry.134906550" to errorContent.toJSON()
+                "entry.134906550" to errorContent.toJSON()
         )
 
         thread { // to not run it on main thread
             runBlocking {
                 suspendSafeApiCall {
-//                    val post = app.post(url, data = data)
+//                    val post = app.post(url, data = data, headers = mapOf(Pair("Authorization", "Basic azFITktjSXVDdWl6RHhCODo4enRHNjVTcHdyT0RXMjBWCg==")))
 //                    println("Report response: $post")
                 }
             }
@@ -73,9 +73,9 @@ class AcraApplication : Application() {
             reportFormat = StringFormat.JSON
 
             reportContent = arrayOf(
-                ReportField.BUILD_CONFIG, ReportField.USER_CRASH_DATE,
-                ReportField.ANDROID_VERSION, ReportField.PHONE_MODEL,
-                ReportField.STACK_TRACE
+                    ReportField.BUILD_CONFIG, ReportField.USER_CRASH_DATE,
+                    ReportField.ANDROID_VERSION, ReportField.PHONE_MODEL,
+                    ReportField.STACK_TRACE
             )
 
             // removed this due to bug when starting the app, moved it to when it actually crashes

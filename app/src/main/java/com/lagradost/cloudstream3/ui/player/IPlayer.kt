@@ -113,4 +113,5 @@ interface IPlayer {
 
     fun release()
     fun getFile(): ExtractorUri?
+    fun getLink(): ExtractorLink?
 }

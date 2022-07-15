@@ -254,7 +254,7 @@
     <string name="nginx_info_title">What is Nginx ?</string>
     <string name="nginx_info_summary">Nginx is a software that can be used to display files from a server that you own. Click to see a Nginx setup guide</string>
     <string name="syncplay_info_title">What is Syncplay ?</string>
-    <string name="syncplay_info_summary">Pausing, unpausing and seeking are synchronized over the Internet, giving everyone playing the same file in the same virtual room a shared viewing experience. Use alongside VoIP software, e.g. Mumble or Skype.</string>
+    <string name="syncplay_info_summary">Pausing, unpausing and seeking are synchronized over the Internet, giving everyone playing the same file in the same virtual room a shared viewing experience. Use alongside VoIP software, e.g. Mumble,Discord or Telegram.</string>
 
     <string name="settings_info">Info</string>
     <string name="advanced_search">Advanced Search</string>
